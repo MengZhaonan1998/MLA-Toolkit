@@ -1,6 +1,6 @@
 import numpy as np
 import time as tm
-from scipy.linalg import solve, qr
+from scipy.linalg import solve, qr, eigvals
 
 from typing import Tuple, Union, List
 from rank_revealing import prrldu, PivotedQR
@@ -55,6 +55,22 @@ def interpolative_qr(M, maxdim):
     Z = solve(R_k.T @ R_k, C.T @ M, overwrite_a=True, overwrite_b=True, assume_a ='pos')
     return C , Z, cols
     
+def interpolative_sqr(M, maxdim=None):
+    row = M.shape[0]
+    col = M.shape[1]
+    if maxdim is None:
+        maxdim = min(M.shape)
+    if row <= col:
+        K = M @ M.T
+    else:
+        K = M.T @ M
+    svals = eigvals(K) #...TO BE DISCUSSED
+    svals = svals[np.sqrt(svals) > 1E-10]
+    rank = len(svals)
+    maxdim = rank if rank < maxdim else maxdim
+    approx, C, Z = interpolative_qr(M, maxdim)
+    return approx, C, Z
+
 # Interpolative decomposition by nuclear score
 def interpolative_nuclear(M, cutoff=0.0, maxdim=None):
     '''
@@ -103,22 +119,18 @@ def interpolative_nuclear(M, cutoff=0.0, maxdim=None):
 
     return C, X, cols, error
 
-# CUR decomposition (cross with inverse)
+# CUR decomposition
 def cur_prrldu(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-    L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)  # Compute PRRLDU decomposition
-    rank = len(d)   
-    r_subset = M[pr[0:rank], :]   # subset of rows
-    c_subset = M[:, pc[0:rank]]   # subset of columns 
-    cross = M[pr[0:rank], :]     
-    cross = cross[:, pc[0:rank]]  # cross matrix
-    return r_subset, c_subset, cross, rank, pr, pc
+    # Rank-revealing decomposition
+    L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim) 
+    rank = len(d)  # Revealed rank   
 
-# CUR decomposition (cross without inverse)
-def cur_prrldu_ninv(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-    L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)  # Compute PRRLDU decomposition
-    rank = len(d)   
+    # Skeleton selection
     r_subset = M[pr[0:rank], :]   # subset of rows
     c_subset = M[:, pc[0:rank]]   # subset of columns 
+
+    # Cross matrix
     cross = M[pr[0:rank], :]     
-    cross = cross[:, pc[0:rank]]  # cross matrix
+    cross = cross[:, pc[0:rank]]
+
     return r_subset, c_subset, cross, rank, pr, pc
