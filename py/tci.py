@@ -2,7 +2,7 @@ import numpy as np
 import random as rd
 import tensorly as tl
 
-from interpolation import interpolative_prrldu, cur_prrldu
+from interpolation import cur_prrldu, interpolative_prrldu_2sides
 from rank_revealing import prrldu
 
 # Slice tensor: T[I,:]
@@ -37,40 +37,56 @@ def coreinv_qr(tensor_core, r_pivot):
     tensor_core = tl.reshape(core_mat, t_shape)
     return tensor_core
 
-# PRRLU-based Tensor-Train Interpolative Decomposition
-def TT_IDPRRLDU(tensorX: tl.tensor, r_max: int, eps: float, verbose: int = 0) -> list[tl.tensor]:
-    shape = tensorX.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
-    dim = len(shape)       # Get the number of dimension
-    delta = (eps / np.sqrt(dim - 1)) * tl.norm(tensorX, 2)  # Truncation parameter
+# PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
+def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
+    shape = tensor.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
+    dim = len(shape)      # Get the number of dimension
+     
+    W = tensor      # Copy tensor X -> W
+    nbar = W.size   # Total size of W
+    r = 1           # Initial TT-Rank r=1
+    TTRank = [1]    # TT-Rank list
+    TTCores = []        # list storing TT-factors
+    TTCross_cinv = []   # list storing TT-factors including intermediate inverse cross matrices
+    TTCross_cninv = []  # list storing TT-factors including intermediate non-inverse cross matrices
     
-    W = tensorX        # Copy tensor X -> W
-    nbar = W.size      # Total size of W
-    r = 1              # Rank r
-    ttList = []        # list storing tt factors
-    iterlist = list(range(1, dim))  # Create iteration list: 1, 2, ..., d-1
-    iterlist.reverse()              # Reverse the iteration list: d-1, ..., 1 
-    
-    for i in iterlist:
-        W = tl.reshape(W, [int(nbar / r / shape[i]), int(r * shape[i])])  # Reshape W       
-        C, X, cols, error = interpolative_prrldu(W, cutoff=delta, maxdim=r_max)
-        ri = C.shape[1]  # r_i-1 = min(r_max, r_delta_i)
-    
-        if verbose == 1:
-            rerror = tl.norm(C @ X - W, 2) / tl.norm(W, 2)
-            print(f"Iteration {i} -- low rank id approximation error = {rerror}")
-    
-        Ti = tl.reshape(X[0:ri, :], [ri, shape[i], r])
-        nbar = int(nbar * ri / shape[i] / r)  # New total size of W
-        r = ri             # Renewal r
-        W = C[:, 0:ri]     # W = U[..] * S[..]
-        ttList.append(Ti)  # Append new factor
-    
-    T1 = tl.reshape(W, [1, shape[0], r])
-    ttList.append(T1)    
-    ttList.reverse()
-    return ttList
+    for i in range(dim-1):
+        # Residual tensor
+        curr_dim = shape[i]  # Current dimension
+        W = tl.reshape(W, [int(r * curr_dim), int(nbar / r / curr_dim)])  # Reshape W       
+        
+        # One/Two-side interpolative decomposition based on PRRLU
+        c_subset, cross, r_subset, cross_inv, _, _, rank = interpolative_prrldu_2sides(W, eps, r_max)
+        
+        # Append the new TT-core (one-side ID)
+        Ti = c_subset @ cross_inv
+        Ti = tl.reshape(Ti, [r, shape[i], rank])
+        TTCores.append(Ti)                      
 
-# PRRLU-based (Exact) Tensor-Train CUR Decomposition (Sweep from Left to Right)
+        # Append the new TT-core (two-side ID (CROSS))
+        TTCross_cinv.append(tl.reshape(c_subset, [r, shape[i], rank])) 
+        TTCross_cinv.append(cross_inv)
+        TTCross_cninv.append(tl.reshape(c_subset, [r, shape[i], rank])) 
+        TTCross_cninv.append(cross)
+        
+        # New TT-Rank
+        TTRank.append(rank)
+
+        # Renewal 
+        nbar = int(nbar * rank / shape[i] / r)  # New total size of W
+        r = rank  # Renewal r
+        W = r_subset
+        
+    # The last TT-core
+    T_last = tl.reshape(W, [r, shape[-1], 1])
+    TTCores.append(T_last)    
+    TTCross_cinv.append(T_last)
+    TTCross_cninv.append(T_last)
+    TTRank.append(1)
+
+    return TTCores, TTCross_cinv, TTCross_cninv, TTRank
+
+# PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right)
 def TT_CUR_L2R(tensor: tl.tensor, r_max: int, eps: float, verbose = 1, full_nest = 1):
     shape = tensor.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
     dim = len(shape)      # Get the number of dimension

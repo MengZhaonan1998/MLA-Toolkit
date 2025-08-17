@@ -20,15 +20,39 @@ def interpolative_prrldu(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.ii
         - inf_error: Error measure from PRRLDU
     """
     L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)  # Compute PRRLDU decomposition
-    k = len(d)
-    U11 = U[:, :k]         # Extract relevant submatrices
+    rank = len(d)
+    U11 = U[:, :rank]         # Extract relevant submatrices
     iU11 = np.linalg.solve(U11, np.eye(U.shape[0])) # Compute inverse of U11 through backsolving
     ZjJ = iU11 @ U         # Compute interpolation matrix
     CIj = L @ np.diag(d) @ U11   # Compute selected columns
     C = CIj[ipr, :]   # Apply inverse row permutation to get C
     Z = ZjJ[:, ipc]   # Apply inverse column permutation to get Z
-    pivot_cols = [ipc.index(i) for i in range(k)]  # Get pivot columns (convert from inverse permutation)
+    pivot_cols = [ipc.index(i) for i in range(rank)]  # Get pivot columns (convert from inverse permutation)
     return C, Z, pivot_cols, inf_error
+
+# 2-side Interpolative decomposition based on PRRLU
+def interpolative_prrldu_2sides(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1):
+    L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)  # Compute PRRLDU decomposition
+    rank = len(d)  # Revealed rank
+    pr = pr[0:rank]  # Row skeleton 
+    pc = pc[0:rank]  # Col skeleton
+    
+    # Skeleton selection
+    r_subset = M[pr, :]  # subset of rows
+    c_subset = M[:, pc]  # subset of columns 
+
+    # Cross matrix
+    cross = M[pr, :]     
+    cross = cross[:, pc]
+
+    # Cross inverse
+    L = np.multiply(L[:rank, :rank], d)
+    U = U[:rank, :rank]
+    I = np.eye(rank)
+    X = np.linalg.solve(L, I)
+    cross_inv = np.linalg.solve(U, X)
+        
+    return c_subset, cross, r_subset, cross_inv, pr, pc, rank
 
 # Interpolative decomposition based on QRCP
 def interpolative_qr(M, maxdim):
