@@ -39,6 +39,7 @@ def coreinv_qr(tensor_core, r_pivot):
 
 # PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
 def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
+    print("TT-ID-PRRLU (two side) starts!")
     shape = tensor.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
     dim = len(shape)      # Get the number of dimension
      
@@ -51,6 +52,8 @@ def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
     TTCross_cninv = []  # list storing TT-factors including intermediate non-inverse cross matrices
     
     for i in range(dim-1):
+        print(f"TT ITER {i}...")
+
         # Residual tensor
         curr_dim = shape[i]  # Current dimension
         W = tl.reshape(W, [int(r * curr_dim), int(nbar / r / curr_dim)])  # Reshape W       
