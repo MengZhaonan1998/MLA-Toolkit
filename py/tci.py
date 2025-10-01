@@ -2,6 +2,7 @@ import numpy as np
 import random as rd
 import tensorly as tl
 
+from scipy.linalg import lu
 from interpolation import cur_prrldu, interpolative_prrldu_2sides
 from rank_revealing import prrldu
 
@@ -31,14 +32,19 @@ def coreinv_qr(tensor_core, r_pivot):
     # T = Q @ Q[pr,:]^-1. May could be more efficient
     mask = ~np.isin(np.arange(mrow), r_pivot) 
     
-    core_mat[mask] = Q[mask] @ Q[r_pivot, :].T
-    #core_mat[mask] = Q[mask] @ np.linalg.inv(Q[r_pivot, :])
+    #core_mat[mask] = Q[mask] @ Q[r_pivot, :].T
+    q_inv = np.linalg.inv(Q[r_pivot, :])
+    core_mat[mask] = Q[mask] @ q_inv
     
     core_mat[r_pivot, :] = np.identity(mcol)
     
     # Reshape the matrix back to tensor core
     tensor_core = tl.reshape(core_mat, t_shape)
     return tensor_core
+
+def coreinv_lu(tensor_core, r_pivot):
+    #...todo: need a stable lu version for TP^-1
+    return
 
 # PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
 def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
