@@ -30,8 +30,10 @@ def coreinv_qr(tensor_core, r_pivot):
     
     # T = Q @ Q[pr,:]^-1. May could be more efficient
     mask = ~np.isin(np.arange(mrow), r_pivot) 
+    
     core_mat[mask] = Q[mask] @ Q[r_pivot, :].T
     #core_mat[mask] = Q[mask] @ np.linalg.inv(Q[r_pivot, :])
+    
     core_mat[r_pivot, :] = np.identity(mcol)
     
     # Reshape the matrix back to tensor core
@@ -656,8 +658,3 @@ def nested_initIJ_gen_rank1(dim, seed=0):
     interp_J[dim+1] = []
 
     return interp_I, interp_J
-
-# 1-site tensor cross interpolation for nesting condition and rank compression
-def TCI_1site(tensor, interp_I, interp_J):
-
-    return
