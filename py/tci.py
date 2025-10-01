@@ -35,16 +35,34 @@ def coreinv_qr(tensor_core, r_pivot):
     #core_mat[mask] = Q[mask] @ Q[r_pivot, :].T
     q_inv = np.linalg.inv(Q[r_pivot, :])
     core_mat[mask] = Q[mask] @ q_inv
-    
+
     core_mat[r_pivot, :] = np.identity(mcol)
     
     # Reshape the matrix back to tensor core
     tensor_core = tl.reshape(core_mat, t_shape)
+    
     return tensor_core
 
 def coreinv_lu(tensor_core, r_pivot):
     #...todo: need a stable lu version for TP^-1
-    return
+    # Reshape the TT-core to a matrix
+    t_shape = tensor_core.shape
+    mrow = t_shape[0] * t_shape[1]
+    mcol = t_shape[2]
+    core_mat = tl.reshape(tensor_core, [mrow, mcol])
+
+    P, L, U = lu(core_mat)
+    J = P @ L
+
+    mask = ~np.isin(np.arange(mrow), r_pivot) 
+    l_inv = np.linalg.inv(J[r_pivot, :])
+    core_mat[mask] = J[mask] @ l_inv
+
+    core_mat[r_pivot, :] = np.identity(mcol)
+    tensor_core = tl.reshape(core_mat, t_shape)
+    
+    return tensor_core
+    
 
 # PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
 def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
