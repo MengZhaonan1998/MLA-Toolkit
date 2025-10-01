@@ -30,7 +30,8 @@ def coreinv_qr(tensor_core, r_pivot):
     
     # T = Q @ Q[pr,:]^-1. May could be more efficient
     mask = ~np.isin(np.arange(mrow), r_pivot) 
-    core_mat[mask] = Q[mask] @ np.linalg.inv(Q[r_pivot, :])
+    core_mat[mask] = Q[mask] @ Q[r_pivot, :].T
+    #core_mat[mask] = Q[mask] @ np.linalg.inv(Q[r_pivot, :])
     core_mat[r_pivot, :] = np.identity(mcol)
     
     # Reshape the matrix back to tensor core
@@ -628,10 +629,11 @@ def TCI_union_two(tensor_f1, interp_I_1, interp_J_1, tensor_f2, interp_I_2, inte
     return interp_I_new, interp_J_new, TTRank_new
 
 # Generate random nested interpolation sets for tensor cross interpolation
-def nested_initIJ_gen_rank1(dim):
+def nested_initIJ_gen_rank1(dim, seed=0):
     # Dict for I/J interpolation
     interp_I = {}
     interp_J = {}
+    rd.seed(seed)
 
     # Iteration for I interpolation
     interp_I[1] = np.array([[rd.randint(0, 1)]])
