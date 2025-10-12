@@ -1,7 +1,7 @@
 import numpy as np
 import random as rd
 import tensorly as tl
-
+from scipy.linalg import solve_triangular
 from scipy.linalg import lu
 from interpolation import cur_prrldu, interpolative_prrldu_2sides
 from rank_revealing import prrldu
@@ -50,18 +50,30 @@ def coreinv_lu(tensor_core, r_pivot):
     mrow = t_shape[0] * t_shape[1]
     mcol = t_shape[2]
     core_mat = tl.reshape(tensor_core, [mrow, mcol])
-
-    P, L, U = lu(core_mat)
-    J = P @ L
+    rank = len(r_pivot)
 
     mask = ~np.isin(np.arange(mrow), r_pivot) 
-    l_inv = np.linalg.inv(J[r_pivot, :])
-    core_mat[mask] = J[mask] @ l_inv
+    
+    core_mat_pivoted = np.zeros([mrow, mcol])
+    core_mat_pivoted[0:rank,:] = core_mat[r_pivot, :]
+    core_mat_pivoted[rank:,:] = core_mat[mask, :]
+    
+    P, L, _ = lu(core_mat_pivoted)
 
+    L_p = L[0:rank,:]
+    L_np = L[rank:,:]
+    P_p = P[:,0:rank]
+    P_np = P[:,rank:]
+    
+    inv_Lp = solve_triangular(L_p, np.identity(rank),lower=True)
+    
+    core_mat[mask] = L_np @ inv_Lp
     core_mat[r_pivot, :] = np.identity(mcol)
+
     tensor_core = tl.reshape(core_mat, t_shape)
     
     return tensor_core
+    
     
 
 # PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
@@ -333,7 +345,8 @@ def cross_inv_merge_stable(TTCore_cross, Pr_set):
     TTCores = []
     for i in range(dimension-1):
         core = TTCore_cross[2*i]
-        new_core = coreinv_qr(core, Pr_set[i+1])  # Use QR-based inverse
+        #new_core = coreinv_qr(core, Pr_set[i+1])  # Use QR-based inverse
+        new_core = coreinv_lu(core, Pr_set[i+1])  # Use QR-based inverse
         TTCores.append(new_core)
     TTCores.append(TTCore_cross[-1])
     return TTCores
