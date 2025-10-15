@@ -3,7 +3,7 @@ import random as rd
 import tensorly as tl
 from scipy.linalg import solve_triangular
 from scipy.linalg import lu
-from interpolation import cur_prrldu, interpolative_prrldu_2sides
+from interpolation import cur_prrldu, interpolative_prrldu
 from rank_revealing import prrldu
 
 # Slice tensor: T[I,:]
@@ -74,59 +74,67 @@ def coreinv_lu(tensor_core, r_pivot):
     
     return tensor_core
     
+# TT-ID-PRRLU Forward sweep
+def TT_IDPRRLDU_L2R(tensorX: tl.tensor, r_max: int, eps: float, verbose: int = 0) -> list[tl.tensor]:
+    shape = tensorX.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
+    dim = len(shape)       # Get the number of dimension
     
-
-# PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right, no interpolation set computation, just cores)
-def TTID_PRRLU_2side(tensor: tl.tensor, r_max: int, eps: float):
-    print("TT-ID-PRRLU (two side) starts!")
-    shape = tensor.shape  # Get the shape of input tensor: [n1, n2, ..., nd]
-    dim = len(shape)      # Get the number of dimension
-     
-    W = tensor      # Copy tensor X -> W
-    nbar = W.size   # Total size of W
-    r = 1           # Initial TT-Rank r=1
-    TTRank = [1]    # TT-Rank list
-    TTCores = []        # list storing TT-factors
-    TTCross_cinv = []   # list storing TT-factors including intermediate inverse cross matrices
-    TTCross_cninv = []  # list storing TT-factors including intermediate non-inverse cross matrices
+    W = tensorX        # Copy tensor X -> W
+    nbar = W.size      # Total size of W
+    r = 1              # Rank r
+    TTCore = []        # list storing tt factors
+    TTRank = [1]      # TT-Rank list
+    iterlist = list(range(0, dim-1))  # Create iteration list: 1, 2, ..., d-1
+    InterpSet_I = {}   # One-sided nested I(row) index set
     
-    for i in range(dim-1):
-        print(f"TT ITER {i}...")
-
-        # Residual tensor
+    for i in iterlist:
         curr_dim = shape[i]  # Current dimension
-        W = tl.reshape(W, [int(r * curr_dim), int(nbar / r / curr_dim)])  # Reshape W       
-        
-        # One/Two-side interpolative decomposition based on PRRLU
-        c_subset, cross, r_subset, cross_inv, _, _, rank = interpolative_prrldu_2sides(W, eps, r_max)
-        
-        # Append the new TT-core (one-side ID)
-        Ti = c_subset @ cross_inv
-        Ti = tl.reshape(Ti, [r, shape[i], rank])
-        TTCores.append(Ti)                      
-
-        # Append the new TT-core (two-side ID (CROSS))
-        TTCross_cinv.append(tl.reshape(c_subset, [r, shape[i], rank])) 
-        TTCross_cinv.append(cross_inv)
-        TTCross_cninv.append(tl.reshape(c_subset, [r, shape[i], rank])) 
-        TTCross_cninv.append(cross)
-        
-        # New TT-Rank
+        W = tl.reshape(W, [int(r * shape[i]), int(nbar / r / shape[i])])  # Reshape W       
+        C_trans, X_trans, pr, inf_error = interpolative_prrldu(W.T, cutoff=eps, maxdim=r_max)
+        X = X_trans.T
+        R = C_trans.T        
+        rank = R.shape[0]  # r_i-1 = min(r_max, r_delta_i)
         TTRank.append(rank)
+    
+        if verbose == 1:
+            rerror = tl.norm(X @ R - W, 2) / tl.norm(W, 2)
+            print(f"Iteration {i} -- low rank id approximation error = {rerror}")
+            
+        Ti = tl.reshape(X, [r, shape[i], rank])
+        TTCore.append(Ti)  # Append new factor
 
-        # Renewal 
         nbar = int(nbar * rank / shape[i] / r)  # New total size of W
-        r = rank  # Renewal r
-        W = r_subset
-        
-    # The last TT-core
-    T_last = tl.reshape(W, [r, shape[-1], 1])
-    TTCores.append(T_last)    
-    TTCross_cinv.append(T_last)
-    TTCross_cninv.append(T_last)
-    TTRank.append(1)
+        r = rank           # Renewal r
+        W = R              # W = U[..] * S[..]
 
-    return TTCores, TTCross_cinv, TTCross_cninv, TTRank
+        # Mapping between r/c selection and tensor index pivots (nested I(row) pivots)
+        if i == 0:
+            InterpSet_I[i+1] = np.array(pr).reshape(-1, 1)
+        else:
+            I = np.empty([rank, i+1])
+            prev_I = InterpSet_I[i]
+            for j in range(rank):
+                p_I_idx = pr[j] // curr_dim
+                c_i_idx = pr[j] % curr_dim
+                I[j,0:i] = prev_I[p_I_idx]
+                I[j,i] = c_i_idx
+            InterpSet_I[i+1] = I        
+
+        # Check the nested condition
+        if verbose == 1:
+            #print("Checking left fully nesting condition...")
+            for ele in np.nditer(W):
+                match_idx = np.argwhere(tensorX == ele)
+                nested_idx = match_idx[0][0:i+1]
+                is_present = np.any(np.all(InterpSet_I[i+1] == nested_idx, axis=1))
+                if (is_present == False):
+                    print("Nested Interpolation error!")
+        
+    T1 = tl.reshape(W, [r, shape[dim-1], 1])
+    TTCore.append(T1)    
+    TTRank.append(1)
+    
+    return TTCore, TTRank, InterpSet_I
 
 # PRRLU-based Tensor-Train CUR Decomposition (Sweep from Left to Right)
 def TT_CUR_L2R(tensor: tl.tensor, r_max: int, eps: float, verbose = 1, full_nest = 1):
