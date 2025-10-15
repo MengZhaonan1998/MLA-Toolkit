@@ -94,7 +94,7 @@ def prrldu(M_: np.ndarray, cutoff: float = 0.0,
         if Mabs.size == 0:
             break        
         Mabs_max = np.max(Mabs)
-        print(f"Iter {s}: Mabs_max = {Mabs_max}")
+        #print(f"Iter {s}: Mabs_max = {Mabs_max}")
         if Mabs_max < cutoff:
             inf_error = Mabs_max
             break
