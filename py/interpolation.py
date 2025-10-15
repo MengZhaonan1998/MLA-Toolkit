@@ -1,12 +1,43 @@
 import numpy as np
 import time as tm
-from scipy.linalg import solve, qr, eigvals
+from scipy.linalg import solve, qr, eigvals, solve_triangular
 
 from typing import Tuple, Union, List
 from rank_revealing import prrldu, PivotedQR
 
 # Interpolative decomposition based on PRRLU
 def interpolative_prrldu(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1) -> Tuple[np.ndarray, np.ndarray, List[int], float]:
+    """
+    Compute interpolative decomposition (ID) via partial rank-revealing LU decomposition.
+    Args:
+        M: Input matrix
+        **kwargs: Additional keyword arguments passed to prrldu
+    Returns:
+        Tuple containing (C, Z, pivot_columns, inf_error)
+        - C: Matrix containing selected columns
+        - Z: Interpolation matrix
+        - skel_columns: List of skeleton column indices
+        - inf_error: Error measure from PRRLDU
+    """
+    # Compute PRRLDU decomposition
+    _, d, U, _, ipc, _, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)
+    rank = len(d)  # Revealed rank
+    
+    # Compute the coefficients
+    U11 = U[:, :rank]      # Extract relevant submatrices
+    Zp = np.zeros([rank, M.shape[1]])
+    Zp[:, :rank] = np.identity(rank)
+    Zp[:, rank:] = solve_triangular(U11, U[:, rank:], lower=False)
+    
+    # Interpolation matrix and skeleton matrix
+    skel_columns = pc[:rank]
+    Z = Zp[:, ipc]
+    C = M[:, skel_columns]   
+        
+    return C, Z, skel_columns, inf_error
+
+# Interpolative decomposition based on PRRLU
+def interpolative_prrldu_LEGACY(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1) -> Tuple[np.ndarray, np.ndarray, List[int], float]:
     """
     Compute interpolative decomposition (ID) from PRRLDU.
     Args:
@@ -29,30 +60,6 @@ def interpolative_prrldu(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.ii
     Z = ZjJ[:, ipc]   # Apply inverse column permutation to get Z
     pivot_cols = [ipc.index(i) for i in range(rank)]  # Get pivot columns (convert from inverse permutation)
     return C, Z, pivot_cols, inf_error
-
-# 2-side Interpolative decomposition based on PRRLU
-def interpolative_prrldu_2sides(M: np.ndarray, cutoff: float = 0.0, maxdim: int = np.iinfo(np.int32).max, mindim: int = 1):
-    L, d, U, ipr, ipc, pr, pc, inf_error = prrldu(M, cutoff, maxdim, mindim)  # Compute PRRLDU decomposition
-    rank = len(d)  # Revealed rank
-    pr = pr[0:rank]  # Row skeleton 
-    pc = pc[0:rank]  # Col skeleton
-    
-    # Skeleton selection
-    r_subset = M[pr, :]  # subset of rows
-    c_subset = M[:, pc]  # subset of columns 
-
-    # Cross matrix
-    cross = M[pr, :]     
-    cross = cross[:, pc]
-
-    # Cross inverse
-    L = np.multiply(L[:rank, :rank], d)
-    U = U[:rank, :rank]
-    I = np.eye(rank)
-    X = np.linalg.solve(L, I)
-    cross_inv = np.linalg.solve(U, X)
-        
-    return c_subset, cross, r_subset, cross_inv, pr, pc, rank
 
 # Interpolative decomposition based on QRCP
 def interpolative_qr(M, maxdim):
